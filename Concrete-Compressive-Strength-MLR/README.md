@@ -15,3 +15,9 @@ The final model achieved:
 
 Below is a visualization of actual vs. predicted values for the test set:
 
+<p align = 'center'>
+  
+![Actual vs Predicted](https://github.com/pweave5/Machine-Learning/blob/main/Concrete-Compressive-Strength-MLR/Concrete_Strength_Test_Set_Predictions.png)
+
+</p>  
+
