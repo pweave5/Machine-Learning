@@ -1,0 +1,312 @@
+---
+title: "Predicting Compressive Strength of Concrete"
+author: "Preston Weaver"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include = FALSE}
+
+# Package Installation
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+
+if(!require(readr)) install.packages("dslabs", repos = "http://cran.us.r-project.org")
+
+if(!require(sjstats)) install.packages("sjstats", repos = "http://cran.us.r-project.org")
+
+if(!require(knitr)) install.packages("knitr", repos = "http://cran.us.r-project.org")
+
+if(!require(kableExtra)) install.packages("kableExtra", repos = "http://cran.us.r-project.org")
+
+#load in dataset
+url <- "https://raw.githubusercontent.com/jholland5/COMP4299/main/Concrete_Data.csv"
+
+concrete_data <- url |>
+  read_csv()
+```
+
+
+## Introduction to the Dataset
+
+This dataset provides an analysis of concrete mixtures. Each entry includes the composition and curing age of concrete samples along with their measured compressive strength in megapascals (MPa). The goal of this report is to predict compressive strength (`strength`) using the these eight predictor variables:
+
+- `cem`:   Amount of Cement in the mix (kg)
+- `slag`:  Amount of Blast Furnace Slag in the mix (kg)
+- `FA`:    Amount of Fly Ash in the mix (kg)
+- `h2o`:   Amount of Water in the mix (kg)
+- `plast`: Amount of Superplasticizer in the mix (kg)
+- `cAgg`:  Amount of Coarse Aggregate in the mix (kg)
+- `fAgg`:  Amount of Fine Aggregate in the mix (kg)
+- `age`:   Curing Time (1-365 days)
+
+
+## SLR with Best Predictor
+
+To create a baseline, we will create a simple linear model using the predictor that best correlates with compressive strength. This variables happens to be the amount of cement in the concrete mix. Below is the summary output for the linear model that predicts compressive strength by cement content. 
+
+
+```{r, echo=FALSE}
+slr_model <- lm(strength ~ cem, data = concrete_data)
+summary(slr_model)
+
+rmse_slr <- rmse(slr_model)
+
+```
+
+From the output, it is observed that both the intercept term and the cement variable are significant predictors in the model. Looking at the $R^2$ value, this model explains about 25% of the variance in the compressive strength variable. This model also produces a RMSE of about 14.5, meaning the average prediction is off by $\pm14.5$.
+
+<br>
+
+Below is a visualization of the amount of cement in the mixture vs the compressive strength of the sample. The line of best fit calculated by the linear model has been laid over top.
+
+<p align = 'center'>
+```{r, echo = FALSE}
+concrete_data |>
+  ggplot(aes(cem, strength)) +
+    geom_point() +
+    geom_abline(slope = coef(slr_model)[2], intercept = coef(slr_model)[1], color = 'blue2', lwd = 1) +
+    labs(
+      title = 'Linear Model: Compressive Strength as a function of Cement',
+      subtitle = paste('RMSE =', round(rmse_slr,2)),
+      x = 'Cement (kg)',
+      y = 'Compressive Strength (MPa)'
+    ) + 
+    theme_bw() +
+    theme(
+      plot.title = element_text(size = 14)
+    )
+```
+</p>
+
+## Best MLR Model
+
+```{r, echo = FALSE}
+# Log transformations will be used in later models, so 0 values need to be replaced with values that are sufficiently near zero
+concrete_data <- concrete_data |>
+  mutate(
+    cem = ifelse(cem == 0, 0.0001, cem),
+    slag = ifelse(slag == 0, 0.0001, slag),
+    FA = ifelse(FA == 0, 0.0001, FA),
+    h2o = ifelse(h2o == 0, 0.0001, h2o),
+    age = ifelse(age == 0, 0.0001, age)
+  )
+
+set.seed(1965)  # Set seed to make model reproducible
+
+# Splitting the data set
+sample_index <- sample(nrow(concrete_data), nrow(concrete_data) * .75)
+train <- concrete_data[sample_index,]
+test <- concrete_data[-sample_index,]
+```
+
+
+The SLR above gave a good baseline, but a better model is definitely attainable by including the other predictors. To find the best model, the technique of backward elimination was used. Below is the summary output of the first iteration, which predicted compressive strength by all the other variables.
+
+```{r, echo=FALSE}
+# Model 1
+mlr_model <- lm(strength ~ ., data = train)
+summary(mlr_model)
+
+rmse1 <- rmse(mlr_model)
+
+# All predictors are significant
+# R squared = 0.618
+# RMSE = 10.142
+```
+
+From the summary output, it is observed that all predictors are significant. The $R^2$ value of 0.618 indicates that the model can explain about 62% of the variance in the strength variable. A RMSE value of 10.1 is also achieved. 
+
+<br>
+
+For the second iteration, the three variables with the highest p values (plast, cAgg, fAgg) were taken out. The variables used for the rest of the iterations are cem, slag, FA, h2o, and age. For iterations 3 through 6, a combination of log transformations were done to the predictor variables. A summary table of the model iterations is included below.
+
+```{r, echo=FALSE}
+# Model 2
+mlr_model2 <- lm(strength ~ cem + slag + FA + h2o + age, data = train)
+
+rmse2 <- rmse(mlr_model2)
+
+# All predictors are very significant
+# R squared = 0.6134
+# RMSE = 10.201
+
+
+# Model 3
+mlr_model3 <- lm(strength ~ log(cem) + log(slag) + log(FA) + log(h2o) +                          log(age), data = train)
+
+rmse3 <- rmse(mlr_model3)
+
+# All predictors are very significant
+# R squared = 0.7797
+# RMSE = 7.702
+
+
+# Model 4
+mlr_model4 <- lm(strength ~ cem + log(slag) + log(FA) + log(h2o) + log(age),
+                 data = train)
+
+rmse4 <- rmse(mlr_model4)
+
+# R squared = .7833
+# RMSE = 7.639
+
+
+# Model 5
+mlr_model5 <- lm(strength ~ cem + log(slag) + log(FA) + h2o + log(age),
+                 data = train)
+
+rmse5 <- rmse(mlr_model5)
+
+# R Squared = .7863
+# RMSE = 7.59
+
+
+# Model 6 
+mlr_model6 <- lm(strength ~ cem + slag + log(FA) + h2o + log(age),
+              data = train)
+
+rmse6 <- rmse(mlr_model6)
+
+# R squared = .8231
+# RMSE = 6.90
+
+modelName <- c('Model 1', 'Model 2', 'Model 3', 'Model 4', 'Model 5', 'Model 6')
+rmseValues <- c(rmse1, rmse2, rmse3, rmse4, rmse5, rmse6)
+rSquareVals <- c(summary(mlr_model)$adj.r.squared,                summary(mlr_model2)$adj.r.squared,
+                 summary(mlr_model3)$adj.r.squared, summary(mlr_model4)$adj.r.squared,
+                 summary(mlr_model5)$adj.r.squared, summary(mlr_model6)$adj.r.squared)
+
+
+modelTable <- cbind(modelName, rSquareVals, rmseValues) |>
+              as.data.frame()
+
+#Clean the new table
+modelTable <- modelTable |>
+  mutate(
+    rSquareVals = as.numeric(rSquareVals),
+    rmseValues = as.numeric(rmseValues),
+    rSquareVals = round(rSquareVals, 3),
+    rmseValues = round(rmseValues, 2)
+  ) |>
+  rename(
+    `R Squared` = rSquareVals,
+    RMSE = rmseValues,
+    Iteration = modelName
+  )
+
+
+kable(modelTable, caption = "Model Iterations and Their Respective Metrics") 
+```
+
+
+The final model iteration uses the five variables previously mentioned: cem, slag, FA, h2o, and age. It also applies a log transformation to both the FA and age predictors. Taking a look at the model summary of iteration 6, a $R^2$ value of 0.82 is achieved, meaning 82% of the variance in compressive strength can be explained by the model. In addition to the high $R^2$, Model 6 also achieved the lowest RMSE with a value of 6.90.
+
+```{r, echo=FALSE}
+
+# Model 6 
+mlr_model6 <- lm(strength ~ cem + slag + log(FA) + h2o + log(age),
+              data = train)
+
+summary(mlr_model6)
+```
+
+<br>
+Now that a final model has been derived, it is time to check out the diagnostic plots.
+
+<p align = 'center'>
+```{r, echo=FALSE}
+# Diagnostic Plots
+par(mfrow = c(2,2)) # Make a 2 by 2 grid for the 4 plots
+plot(mlr_model6)
+```
+</p>
+
+Nothing concerning jumps out from the diagnostic plots. 
+<br>
+
+After running the model on the test set, a plot of values predicted by the model vs actual values can be created. It is observed that most predictions hover around the line which indicates the model is fairly accurate. Something to note is that the model tends to underestimate the larger values of strength. Also, the RMSE of the predicted values vs the actual values of the test set is around 7.5, meaning the model has an error of $\pm7.5$ when preforming on unseen data.
+
+<p align = 'center'>
+```{r, echo=FALSE}
+# Add predictions to test set
+test <- test |>
+  mutate(
+    predictions = predict(mlr_model6, test)
+  )
+
+# Actual vs Predicted
+par(mfrow = c(1,1))
+
+test |>
+  ggplot(aes(strength, predictions)) +
+    geom_point() +
+    geom_abline(slope = 1, intercept = 0, color = 'blue2') +
+    labs(
+      title = "Actual Compressive Strength Values vs Predicted Values",
+      subtitle = paste("RMSE =", round(sqrt(mean((test$strength - test$predictions)^2)), 3)),
+      x = "Actual",
+      y = "Predicted"
+    ) +
+    theme_bw()
+
+```
+</p>
+
+## Prediction
+
+To test the validity of the model, a T Test is prefomed to see if the mean of the residuals is zero.  
+```{r,echo = FALSE}
+t.test(test$strength - test$predictions)
+```
+
+A p-value of 0.576 is obtained, meaning we fail to reject the null hypothesis. This suggests that there is no significant evidence to conclude that the true mean difference is different from zero. Additionally, since 0 is contained within the confidence interval (-0.659 to 1.182), we can infer that the model is not systematically bias in its predictions.
+
+## Conclusion
+
+A reasonably reliable model was developed. To confirm that the seed did not influence its performance, seven additional random seeds were tested. The table below presents the $R^2$ and RMSE values for the models generated with these different seeds.
+
+```{r, echo = FALSE}
+# Create an empty tibble
+otherSeeds <- tibble(Seed = numeric(), `R Squared` = numeric(), RMSE =      numeric())
+
+# Generate 5 random seeds
+set.seed(2016)
+seeds <- sample(2000, 7)
+
+# For Loop to test model with other seeds
+for(s in seeds){
+  set.seed(s)
+  
+  # Creating the training set
+  index <- sample(nrow(concrete_data), nrow(concrete_data) * .75)
+  train <- concrete_data[index,]
+  
+  m <- lm(strength ~ cem + slag + log(FA) + h2o + log(age),
+          data = train)
+  
+  rSquare <- summary(m)$adj.r.squared
+  rmse_val <- rmse(m)
+  
+  newRow <- tibble(Seed = s, `R Squared` = rSquare, RMSE = rmse_val)
+  
+  otherSeeds <- bind_rows(otherSeeds, newRow)
+}
+
+otherSeeds <- otherSeeds |>
+  mutate(
+    Seed = as.character(Seed)
+  )
+
+avgRow <- tibble(Seed = 'Average', `R Squared` = mean(otherSeeds$`R Squared`), RMSE = mean(otherSeeds$RMSE))
+
+otherSeeds <- bind_rows(otherSeeds, avgRow)
+
+kable(otherSeeds, caption = "Testing Model with other Seeds")
+
+```
+
+The average $R^2$ of 0.819 is very close to the 0.821 achieved by the final model. Similarly, the average RMSE of 7.071 is comparable to the final model's 6.90. Since the results show minimal variation, we can confidently conclude that the model is reasonably reliable and performs well.
