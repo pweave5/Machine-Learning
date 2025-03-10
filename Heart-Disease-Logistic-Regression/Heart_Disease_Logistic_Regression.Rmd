@@ -1,0 +1,392 @@
+---
+title: "Predicting Heart Disease Using Logistic Regression"
+author: "Preston Weaver"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include = FALSE}
+
+# Package Installation
+packages <- c("tidyverse", "caret", "knitr", "kableExtra", "DT")
+
+# Install and load any missing packages
+install_and_load <- function(pkg) {
+  if (!require(pkg, character.only = TRUE)) {
+    install.packages(pkg, repos = "http://cran.us.r-project.org")
+    library(pkg, character.only = TRUE)
+  }
+}
+
+# Apply the function to each package
+sapply(packages, install_and_load)
+
+#load in dataset
+url <- "https://raw.githubusercontent.com/jholland5/COMP4299/main/heartData.csv"
+
+heart_data <- url |>
+  read_csv()
+
+```
+
+## Introduction
+
+The goal of this report is to predict whether or not a patient has heart disease based off of selected variables. The dataset has 9 predictor variables, and single response variable. The predictor variables are:
+
+ - `age`: Age of the patient
+ - `sex`: Gender of the patient (0 = Female; 1 = Male)
+ - `sys_press`: Systolic blood pressure value of the patient (mm Hg)
+ - `chol`: Serum cholesterol (mg/dl)
+ - `fast_bsug`: Fasted blood sugar > 120 mg/dl (0 = No; 1 = Yes)
+ - `recg`: Resting electrocardiographic results (0 = Normal; 1 = Having ST-T wave abnormality; 2 = Probable left ventricle hypertrophy)
+ - `max_hrate`: Max heart rate of the patient
+ - `opk`: ST depression induced by exercise relative to rest
+ - `nvess`: Number of major blood vessels colored by flourosopy (0-3)
+
+The dataset aims to provide insights into how these variables are correlated with the likelihood of heart disease, with the response variable (`level`) indicating whether or not a patient has heart disease (0 = No; 1 = Yes).
+
+## Data Preperation and Visualization
+
+Before we can start modeling, some data preparation is needed. Half of the predictors are categorical variables and need to be transformed into factor variables. The other half of the predictors are continuous variables. In an effort to mitigate potential bias, all continuous variables were scaled using a z-score transformation. Here is a look at the transformed data.
+
+```{r, echo=FALSE, include=FALSE}
+# Change Categorical variables to factors
+heart_data <- heart_data |>
+  mutate(
+    sex = as.factor(sex),
+    fast_bsug = as.factor(fast_bsug),
+    recg = as.factor(recg),
+    nvess = as.factor(nvess),
+    level = as.factor(level)
+  )
+
+# Scale all continuous Variables
+heart_data <- heart_data |>
+  mutate(
+    age = as.numeric(scale(age)),
+    sys_press = as.numeric(scale(sys_press)),
+    chol = as.numeric(scale(chol)),
+    max_hrate = as.numeric(scale(max_hrate)),
+    opk = as.numeric(scale(opk))
+  )
+
+```
+
+```{r, echo = FALSE}
+heart_data2 <- heart_data |>
+  mutate(
+    age = round(age, 3),
+    sys_press = round(sys_press, 3),
+    chol = round(chol, 3),
+    max_hrate = round(max_hrate, 3),
+    opk = round(opk, 3)
+  )
+  
+  
+datatable(heart_data2)
+```
+
+Now let's take a look at the distributions of the continuous variables. The distributions are colored by diagnosis. There is not really a single predictor that separates the two diagnoses well, but max heart rate looks the most promising. Also, another point to note is that the distributions of all continuous predictors appear to be normal, except the opk distribution which has a significant right skew.
+
+<div align = 'center'>
+```{r, echo = FALSE, warning= FALSE}
+# Faceted Plot of all continuous variables
+heart_data |>
+  select(age, sys_press, max_hrate, chol, opk, level) |>
+  pivot_longer(-level, names_to = "var", values_to = "value") |> 
+  ggplot(aes(x = value, fill = as.factor(level))) +
+    geom_density(alpha = 0.5) +
+    facet_wrap(~ var, scales = "free") + 
+    labs(title = "Distributions of Predictors",
+          x = "Standardized Value",
+          y = "Count"
+         ) + 
+    scale_fill_manual(
+      name = "Diagnosis",
+      values = c("0" = "royalblue", "1" = "darkorange"),  # Use Custom Colors
+      labels = c('No Heart Disease', 'Heart Disease') 
+    ) +
+    theme_bw() 
+```
+
+</div>
+
+
+## Logistic Model with One Predictor
+
+```{r, echo= FALSE, warning=FALSE}
+# Set Seed for reproducible results
+set.seed(2022, sample.kind = "Rounding") 
+testIndex <- createDataPartition(heart_data$level, times = 1, p= .4, list = FALSE)
+
+# Split Data set
+train <- heart_data[-testIndex,]
+test <- heart_data[testIndex,]
+```
+
+To create a baseline model, we will attempt to predict the presence of heart disease using a single variable, max heart rate. Below is the summary output of the baseline model. Something to note is that `max_hrate` is a significant predictor, but not the intercept term.
+
+```{r, echo = FALSE}
+# Create the model
+baseline <- glm(level ~ max_hrate, family = 'binomial', data = train)
+
+# Output model summary
+summary(baseline)
+```
+
+Now let's examine how this model preforms on the test set. To evaluate the preformance of the model we will examine the sensitivity, specificity, and overall acuracy of the model. 
+
+```{r, echo = FALSE}
+# Predict the probabilities and turn them into a 0 or 1 prediction
+p_hat_baseline <- predict(baseline, test, type = "response")
+y_hat_baseline <- factor(ifelse(p_hat_baseline > .5,1,0), levels = c("0","1"))
+
+# Compute the three metrics and put into a tibble
+c1 <- confusionMatrix(y_hat_baseline, factor(test$level), positive = "1")$byClass[1:2]
+c2 <- confusionMatrix(y_hat_baseline, factor(test$level), positive = "1")$overall["Accuracy"]
+
+output <- tibble(Metric = character(), Result = numeric())
+new_data <- tibble(Metric = c('Sensitivity', 'Specificity', 'Accuracy'), Result = c(round(c1[1],3), round(c1[2], 3), round(c2, 3)))
+
+
+output <- bind_rows(output, new_data)
+
+knitr::kable(output)
+```
+
+The baseline model has an overall accuracy of 0.697 meaning it correctly predicts the diagnosis almost 70% of the time. The specificity is higher than the sensitivity meaning the baseline model does a better job at predicting the negative class (Patients without Heart Disease) than predicting the positive class.
+
+Below is a visualization of the logistic probabilities produced by the model.
+
+<div align = 'center'>
+
+```{r, echo = FALSE}
+# Grab input values
+x <- train$max_hrate
+
+# Grab intercept term and weight from baseline model
+intercept <- baseline$coefficients[1]
+weight <- baseline$coefficients[2]
+
+
+train2 <- train
+
+# Calculate probability values
+train2$p <- exp(intercept + weight * x)/(1+exp(intercept + weight * x))
+
+# Plot max heart rate value vs Probabilities
+train2 |>
+  ggplot(aes(max_hrate, p, color = factor(level))) +
+    geom_point() +
+    ylim(0,1) +
+    labs(
+      x = "Max Heart Rate Scaled",
+      y = "Probability",
+      title = "Predicting Heart Disease by Max Heart Rate",
+      color = "Diagnosis"
+    ) +
+    theme_bw() +
+    scale_color_manual(
+      values = c("royalblue", "darkorange"),
+      labels = c("No Heart Disease", "Heart Disease")
+      ) +
+    geom_abline(intercept = 0.50, slope = 0, linetype = 'dashed')
+
+```
+</div>
+
+As the plot shows, maximum heart rate does a fairly good job of predicting the presence of heart disease. Most of the heart disease cases are grouped above the threshold, while the majority of the healthy cases are placed below the threshold.
+
+## Multivariable Logistic Model
+
+To find the best model, the technique of backwards elimination was used. First, a model predicting level by all other variables was produced. Then, predictors were iteratively removed based on their p values. Below is a table of the the metrics for each model when used to predict on the test data. Also included is the summary output for the final model.
+
+
+```{r, echo = FALSE}
+Results <- tibble(Iteration = character(), Accuracy = numeric(), Sensitivity = numeric(),
+                  Specificity = numeric(), Average = numeric())
+
+# Model 1
+glm1 <- glm(level ~., family = 'binomial', data = train)
+
+p_hat_1 <- predict(glm1, test, type = "response")
+y_hat_1 <- factor(ifelse(p_hat_1 > .5,1,0),levels = c("0","1"))
+
+c1 <- confusionMatrix(y_hat_1, factor(test$level), positive = "1")$byClass[1:2]
+c2 <- confusionMatrix(y_hat_1, factor(test$level), positive = "1")$overall["Accuracy"]
+c3 <- (c1[1] + c1[2] + c2) / 3   # Find average of the three metrics
+
+newRow <- tibble(Iteration = 'All Predictors', Accuracy = c2, Sensitivity = c1[1],
+                 Specificity = c1[2], Average = c3)
+
+Results <- bind_rows(Results, newRow)
+
+# Model 2 - Remove recg
+glm2 <- glm(level ~ sex + age + sys_press + chol + fast_bsug  + max_hrate + opk + nvess,
+              family = 'binomial',
+              data = train)
+
+p_hat_2 <- predict(glm2, test, type = "response")
+y_hat_2 <- factor(ifelse(p_hat_2 > .5,1,0),levels = c("0","1"))
+
+c1 <- confusionMatrix(y_hat_2, factor(test$level), positive = "1")$byClass[1:2]
+c2 <- confusionMatrix(y_hat_2, factor(test$level), positive = "1")$overall["Accuracy"]
+c3 <- (c1[1] + c1[2] + c2) / 3   # Find average of the three metrics
+
+newRow <- tibble(Iteration = 'recg Removed', Accuracy = c2, Sensitivity = c1[1],
+                 Specificity = c1[2], Average = c3)
+
+Results <- bind_rows(Results, newRow)
+
+# Model 3 - Remove bsug
+glm3 <- glm(level ~ sex + sys_press + chol + age + max_hrate + opk + nvess,
+              family = 'binomial',
+              data = train)
+
+p_hat_3 <- predict(glm3, test, type = "response")
+y_hat_3 <- factor(ifelse(p_hat_3 > .5,1,0),levels = c("0","1"))
+
+c1 <- confusionMatrix(y_hat_3, factor(test$level), positive = "1")$byClass[1:2]
+c2 <- confusionMatrix(y_hat_3, factor(test$level), positive = "1")$overall["Accuracy"]
+c3 <- (c1[1] + c1[2] + c2) / 3   # Find average of the three metrics
+
+newRow <- tibble(Iteration = 'fast_bsug Removed', Accuracy = c2, Sensitivity = c1[1],
+                 Specificity = c1[2], Average = c3)
+
+Results <- bind_rows(Results, newRow)
+
+
+
+# Model 4 - remove sys_press
+glm4 <- glm(level ~ sex + age + chol + max_hrate + opk + nvess, 
+              family = 'binomial',
+              data = train)
+
+p_hat_4 <- predict(glm4, test, type = "response")
+y_hat_4 <- factor(ifelse(p_hat_4 > .5,1,0),levels = c("0","1"))
+
+c1 <- confusionMatrix(y_hat_4, factor(test$level), positive = "1")$byClass[1:2]
+c2 <- confusionMatrix(y_hat_4, factor(test$level), positive = "1")$overall["Accuracy"]
+c3 <- (c1[1] + c1[2] + c2) / 3   # Find average of the three metrics
+
+newRow <- tibble(Iteration = 'sys_press Removed', Accuracy = c2, Sensitivity = c1[1],
+                 Specificity = c1[2], Average = c3)
+
+Results <- bind_rows(Results, newRow)
+
+
+# Model 5 - remove chol
+glm5 <- glm(level ~ sex + age + max_hrate + opk + nvess,
+              family = 'binomial',
+              data = train)
+
+p_hat_5 <- predict(glm5, test, type = "response")
+y_hat_5 <- factor(ifelse(p_hat_5 > .5,1,0),levels = c("0","1"))
+
+c1 <- confusionMatrix(y_hat_5, factor(test$level), positive = "1")$byClass[1:2]
+c2 <- confusionMatrix(y_hat_5, factor(test$level), positive = "1")$overall["Accuracy"]
+c3 <- (c1[1] + c1[2] + c2) / 3   # Find average of the three metrics
+
+newRow <- tibble(Iteration = 'chol Removed', Accuracy = c2, Sensitivity = c1[1],
+                 Specificity = c1[2], Average = c3)
+
+Results <- bind_rows(Results, newRow)
+
+# Model 6 - Remove Age
+
+glm6 <- glm(level ~ sex + max_hrate + opk + nvess,
+              family = 'binomial',
+              data = train)
+
+p_hat_6 <- predict(glm6, test, type = "response")
+y_hat_6 <- factor(ifelse(p_hat_6 > .5,1,0),levels = c("0","1"))
+
+c1 <- confusionMatrix(y_hat_6, factor(test$level), positive = "1")$byClass[1:2]
+c2 <- confusionMatrix(y_hat_6, factor(test$level), positive = "1")$overall["Accuracy"]
+c3 <- (c1[1] + c1[2] + c2) / 3   # Find average of the three metrics
+
+newRow <- tibble(Iteration = 'age Removed', Accuracy = c2, Sensitivity = c1[1],
+                 Specificity = c1[2], Average = c3)
+
+Results <- bind_rows(Results, newRow)
+
+kable(Results)
+
+```
+```{r, echo = FALSE}
+summary(glm6)
+```
+
+As observed, the final model produces the best results in all the metrics. Also, it should be noted that all predictors that are included in the model are considered statistically significant. The final model predicted level by the sex, max_hrate, opk, and nvess. The equation of the final model is as shown: 
+
+<div align = 'center'>
+$p = \frac{1}{1 + e^{(2.21 - 1.93(\text{sex}) + 0.90(\text{max_hrate}) - 0.42(\text{opk}) - 1.31(\text{nvess})}}$
+
+</div>
+
+The final model predicts the level variable correctly about 79% of the time. As for the positive cases, the model predicted those correctly 73% of the time. And for the negative cases, the model predicted those correctly about 82% of the time. When these three metrics are averaged together, a value of about 78% is achieved.
+
+
+
+## Conclusion
+
+To confirm the seed did not influence the performance of the model, five additional random seeds were tested. The table below displays the accuracy, sensitivity, specificity, and the average of the three metrics for the models generated with these different seeds.
+
+```{r, echo=FALSE}
+otherSeeds <- tibble(Seed = numeric(), `Accuracy` = numeric(), Sensitivity = numeric(),
+                     Specificity = numeric(), Average = numeric())
+
+seeds <- sample(2000, 5)
+
+for(s in seeds){
+  #Split dataset
+  testIndex <- createDataPartition(heart_data$level, times = 1, p= .4, list = FALSE)
+  
+  train <- heart_data[-testIndex,]
+  
+  test <- heart_data[testIndex,]
+  
+  # Create Model using new seed
+  m <- glm(level ~ sex + max_hrate + opk + nvess,
+           family = 'binomial',
+           data = train)
+  
+  p_hat <- predict(m, test, type = "response")
+  y_hat <- factor(ifelse(predict(m, test, type="response") > 0.5, 1, 0), 
+                            levels = c("0", "1"))
+  
+  sense <- confusionMatrix(y_hat, factor(test$level), positive = "1")$byClass[1]
+  spec <- confusionMatrix(y_hat, factor(test$level), positive = "1")$byClass[2]
+  accuracy <- confusionMatrix(y_hat, factor(test$level), positive = "1")$overall["Accuracy"]
+  
+  avg <- (sense + spec + accuracy) / 3
+  
+  newRow <- tibble(Seed = s, `Accuracy` = accuracy, Sensitivity = sense, Specificity = spec,
+                   Average = avg)
+  
+  otherSeeds <- bind_rows(otherSeeds, newRow)
+}
+
+mean_acc <- mean(otherSeeds$Accuracy)
+mean_sens <- mean(otherSeeds$Sensitivity)
+mean_spec <- mean(otherSeeds$Specificity)
+mean_avg <- mean(otherSeeds$Average)
+
+newRow <- tibble(Seed = 'Average', Accuracy = mean_acc, Sensitivity = mean_sens,
+                 Specificity = mean_spec, Average = mean_avg)
+
+otherSeeds <- otherSeeds |>
+  mutate(
+    Seed = as.character(Seed)
+  )
+
+otherSeeds <- bind_rows(otherSeeds, newRow)
+
+kable(otherSeeds)
+```
+
+As shown in the table, the seed did not influence the model's success. In fact, when tested with different seeds, models built from the new seeds outperformed the original in all metrics. Although this model preformed fairly well, future models might consider trying other non-linear model types such as random forests.
