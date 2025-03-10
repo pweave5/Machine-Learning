@@ -12,4 +12,4 @@ Through these projects, I developed essential machine learning skills, including
 ## 📂 Projects & Models Used
 The projects in this repository utilize a range of machine learning models, including:
 - [Multiple Linear Regression](https://github.com/pweave5/Machine-Learning/tree/main/Concrete-Compressive-Strength-MLR)
-- [Logistic Regression]()
+- [Logistic Regression](https://github.com/pweave5/Machine-Learning/tree/main/Heart-Disease-Logistic-Regression)
