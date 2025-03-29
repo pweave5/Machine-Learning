@@ -1,0 +1,273 @@
+---
+title: "Spam Detection Decision Tree"
+author: "Preston Weaver"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include = FALSE}
+
+# Package Installation
+packages <- c("tidyverse", "caret", "knitr", "kableExtra", "DT", "rpart", "rpart.plot", "gridExtra")
+
+# Install and load any missing packages
+install_and_load <- function(pkg) {
+  if (!require(pkg, character.only = TRUE)) {
+    install.packages(pkg, repos = "http://cran.us.r-project.org")
+    library(pkg, character.only = TRUE)
+  }
+}
+
+# Apply the function to each package
+sapply(packages, install_and_load)
+
+#load in dataset
+url <- "https://raw.githubusercontent.com/jholland5/COMP4299/main/spamData.csv"
+
+
+spam_data <- url |>  read_csv()
+
+```
+
+## Introduction
+
+The Spam E-Mail Dataset is designed to classify emails as either spam (1) or not spam (0) based on various textual and structural attributes. It consists of 57 attributes that capture different characteristics of an email, including:
+
+- Word Frequency (48 attributes): Measures the percentage of words in the email that match specific keywords.
+
+- Character Frequency (6 attributes): Represents the percentage of specific characters (e.g., ‘$’, ‘!’, ‘#’) in the email.
+
+- Capital Letter Features (3 attributes): Includes the average length, longest sequence, and total number of uninterrupted capital letter sequences, which can indicate emphasis or promotional content in spam emails.
+
+
+## Data Preparation
+
+Before we start the modeling process, we must first split the data into training and testing sets. Because our original data frame has sufficient entries, an 80/20 split will be used. This split is common in machine learning to ensure the model has enough data for training while also leaving a representative portion for testing.
+
+```{r, echo = FALSE}
+spam_data$spamORnot <- as.factor(spam_data$spamORnot)
+
+# Remove index variable
+spam_data <- spam_data |>
+  select(-1)
+
+# Create train and test sets
+set.seed(2022)
+
+split_index <- sample(nrow(spam_data), nrow(spam_data) * .8)
+train <- spam_data[split_index,]
+test <- spam_data[-split_index,]
+
+```
+
+Now, let's examine two predictors that may be important in the model: the frequency of the word 'you' and the total number of capital letters. The table below compares the mean values of these variables for spam and valid emails.
+
+```{r, echo = FALSE}
+train |>
+  group_by(spamORnot) |>
+  summarize(
+    `Frequency of You` = round(mean(freq_you), 3),
+    `Total Capital Letters` = round(mean(cap_total), 3)
+  ) |>
+  knitr::kable()
+
+```
+
+As we observe, the word 'you' is used at a higher frequency in spam emails and on average there are more capital letters in spam emails than in valid emails.
+
+
+Looking at the distributions, both predictors exhibit a right skew, which may indicate that a small number of emails contain a disproportionately high frequency of 'you' and capital letters. This characteristic could be indicative of spam emails, which often feature high usage of certain words and capitalized phrases.
+
+<div style="text-align: center;">
+
+```{r, echo=FALSE}
+# Create first histogram
+plot1 <- ggplot(spam_data, aes(x = freq_you)) +
+  geom_histogram(binwidth = 1, fill = "royalblue", color = "black", alpha = 0.7) +
+  labs(title = "Histogram of 'Frequency of 'You'", x = "Frequency of 'You'", y = "Count") +
+  theme_bw()
+
+# Create second histogram
+plot2 <- ggplot(spam_data, aes(x = cap_total)) +
+  geom_histogram(binwidth = 150, fill = "royalblue", color = "black", alpha = 0.7) +
+  labs(title = "Histogram of Total Capital Letters", x = "Total Number of Capital Letters", y = "Count")  +
+      coord_cartesian(
+        xlim = c(0, 5000)
+        ) +
+  theme_bw()
+
+grid.arrange(plot1, plot2, ncol = 2)
+```
+
+</div>
+
+## Simple Decision Tree
+
+Using these two variables, we will create a simple decision tree. If the frequency of the word 'you' is greater than 1.5 and the total number of capital letters exceeds 169, the email will be classified as spam; otherwise, it will be classified as valid. These cutoff values were determined through trial and error. Below is a table of how the tree preforms on the test data.
+
+```{r, echo=FALSE}
+test <- test |>
+  mutate(
+    prediction = ifelse(freq_you > 1.5 & cap_total > 169, 1, 0)
+  )
+
+
+cm <- confusionMatrix(as.factor(test$spamORnot), as.factor(test$prediction))
+
+m <- tibble(Metric = c('Accuracy', 'Sensitivity', 'Specificity', 'Balanced Accuracy'), Value = c(cm$overall['Accuracy'], cm$byClass['Sensitivity'], cm$byClass['Specificity'], cm$byClass['Balanced Accuracy']))
+
+m <- m |>
+  mutate(
+    Value = round(Value, 3)
+  )
+
+kable(m)
+
+```
+
+As we observe, this simple model achieves a balanced accuracy of over .81. The model does better at predicting valid emails than spam emails. Of the spam emails in the set, the simple decision tree detects 71.6% of them. Below is a visualization of the model.
+
+<div style="text-align: center;">
+
+```{r, echo=FALSE}
+spam_data |>
+  ggplot(aes(freq_you, cap_total, color = spamORnot)) +
+    geom_point() +
+      coord_cartesian(
+        xlim = c(0, 10),
+        ylim = c(0, 500)
+        ) +
+      geom_vline(
+        xintercept = 0.75,
+        color = 'black',
+        linetype = 'dashed',
+        linewidth = 1.2
+        ) +
+      geom_hline(
+        yintercept = 169,
+        color = 'black',
+        linetype = 'dashed',
+        linewidth = 1.2
+        ) +
+      labs(
+        title = "Simple Decision Tree Model",
+        x = "Frequency of the Word 'You'",
+        y = "Number of Capital Letters",
+        color = "Classification"
+      ) +
+      scale_color_manual(
+        values = c("0" = "royalblue", "1" = "orange"),
+        labels = c("0" = "Valid", "1" = "Spam")) +
+      theme_bw() +
+      theme(
+        plot.title = element_text(hjust = 0.5)
+      ) 
+
+```
+
+</div>
+
+## Decision Tree Model
+
+The initial decision tree model using only two predictors performed fairly well, but an improved model can be achieved by incorporating additional predictors. Using the rpart library and all available predictors, a decision tree model was developed. Below is a table summarizing the model's performance.
+
+```{r, echo = FALSE}
+
+# Create the model
+treeModel <- rpart(spamORnot ~ ., 
+                data = train,
+                method = 'class')
+
+# Produce predictions using the model
+predictions <- predict(treeModel, test, type = 'class')
+
+cm <- confusionMatrix(test$spamORnot, predictions)
+
+m <- tibble(Metric = c('Accuracy', 'Sensitivity', 'Specificity', 'Balanced Accuracy'), Value = c(cm$overall['Accuracy'], cm$byClass['Sensitivity'], cm$byClass['Specificity'], cm$byClass['Balanced Accuracy']))
+
+m <- m |>
+  mutate(
+    Value = round(Value, 3)
+  )
+
+kable(m)
+```
+
+
+- Accuracy reflects the proportion of correctly classified emails. The model performs well in this regard, correctly classifying 90% of both spam and non-spam emails.
+
+- Sensitivity, at 88.4%, measures how well the model identifies spam emails, which is crucial for spam detection. This indicates that the model successfully detects most spam emails.
+
+- Specificity, at 91.9%, shows that the model is also effective in identifying non-spam (valid) emails.
+
+- Balanced Accuracy, which averages sensitivity and specificity, confirms that the model is well-balanced in its performance across both classes.
+
+
+Another strength of the model is it is not overly complex. Below is a visualization of the decision tree, which illustrates the decision-making process used by the model to classify emails.
+
+<div style="text-align: center;">
+
+```{r, echo=FALSE}
+rpart.plot(treeModel)
+```
+
+</div>
+
+
+## Conclusion
+
+To confirm the seed did not influence the performance of the model, five additional random seeds were tested. The table below displays the accuracy, sensitivity, specificity, and balanced accuracy for the models generated with these different seeds. As observed, the seed did not play a role in the model's success.
+
+```{r, echo=FALSE}
+otherSeeds <- tibble(Seed = numeric(), `Accuracy` = numeric(), Sensitivity = numeric(), Specificity = numeric(), `Balanced Accuracy` = numeric())
+
+seeds <- sample(2000, 5)
+
+for(s in seeds){
+  #Split dataset
+  testIndex <- sample(nrow(spam_data), nrow(spam_data) * .8)
+  
+  test <- spam_data[-testIndex,]
+  
+  # Test Model using new seed
+  predictions <- predict(treeModel, test, type = 'class')
+  
+  cm <- confusionMatrix(test$spamORnot, predictions)
+  
+  newRow <- tibble(Seed = s, `Accuracy` = cm$overall['Accuracy'], Sensitivity = cm$byClass['Sensitivity'], Specificity = cm$byClass['Specificity'],
+                   `Balanced Accuracy` = cm$byClass['Balanced Accuracy'])
+  
+  otherSeeds <- bind_rows(otherSeeds, newRow)
+}
+
+mean_acc <- mean(otherSeeds$Accuracy)
+mean_sens <- mean(otherSeeds$Sensitivity)
+mean_spec <- mean(otherSeeds$Specificity)
+mean_avg <- mean(otherSeeds$`Balanced Accuracy`)
+
+newRow <- tibble(Seed = 'Average', Accuracy = mean_acc, Sensitivity = mean_sens, Specificity = mean_spec, `Balanced Accuracy` = mean_avg)
+
+otherSeeds <- otherSeeds |>
+  mutate(
+    Seed = as.character(Seed)
+  )
+
+otherSeeds <- bind_rows(otherSeeds, newRow)
+
+otherSeeds <- otherSeeds |>
+  mutate(
+    Accuracy = round(Accuracy, 3),
+    Sensitivity = round(Sensitivity, 3),
+    Specificity = round(Specificity, 3),
+    `Balanced Accuracy` = round(`Balanced Accuracy`, 3)
+  )
+
+kable(otherSeeds)
+```
+
+In summary, the decision tree model, built using all available predictors, performed well with an overall accuracy above 90% and a balanced accuracy of 91%. It is able to identify both spam and valid emails effectively, while maintaining a simple structure. The decision tree visualization provides further insight into the model’s decision-making process. Going forward, further exploration with advanced models may yield even better results.
+
