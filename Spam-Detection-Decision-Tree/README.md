@@ -15,3 +15,9 @@ The final model achieved:
 - Specificity = 0.939 (93.9% of valid emails were correctly identified)
 
 Below is a visualization of the final tree developed.
+
+<div align = 'center'>
+  
+![Decision Tree](https://github.com/pweave5/Machine-Learning/blob/main/Spam-Detection-Decision-Tree/Email_Decision_Tree.png)
+
+</div>
