@@ -5,7 +5,7 @@ This project predicts whether an email is spam or not using 57 continuous predic
 I use a decision tree, implemented via the rpart library, to classify emails as spam or valid. Initially, a simple baseline model was created using only two variables and an if-else statement. Then, a more complex model was developed using all 57 predictors to improve classification performance.
 
 ## Dataset
-The dataset, available at [Spam Email Dataset](https://github.com/jholland5/COMP4299/main/spamData.csv), contains variables describing several characteristics of the email, such as word frequency, character frequency, and capital letter frequency, along with the classification label (spam or valid).
+The dataset, available at [Spam Email Dataset](https://github.com/jholland5/COMP4299/blob/main/spamData.csv), contains variables describing several characteristics of the email, such as word frequency, character frequency, and capital letter frequency, along with the classification label (spam or valid).
 
 ## Results
 The final model achieved:
