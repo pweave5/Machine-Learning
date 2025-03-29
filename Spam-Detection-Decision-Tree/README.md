@@ -10,8 +10,8 @@ The dataset, available at [Spam Email Dataset](https://github.com/jholland5/COMP
 ## Results
 The final model achieved:
 
-Accuracy = 0.905 (90.5% of predictions were correct)
-Sensitivity = 0.888 (88.8% of spam emails were correctly identified)
-Specificity = 0.939 (93.9% of valid emails were correctly identified)
+- Accuracy = 0.905 (90.5% of predictions were correct)
+- Sensitivity = 0.888 (88.8% of spam emails were correctly identified)
+- Specificity = 0.939 (93.9% of valid emails were correctly identified)
 
 Below is a visualization of the final tree developed.
