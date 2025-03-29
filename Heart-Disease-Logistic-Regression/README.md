@@ -6,7 +6,7 @@ This project predicts the presence of heart disease using nine predictor variabl
 I use a Logistic Regression model with backwards elimination to select significant predictors while maintaining strong performance metrics. The model was evaluated using accuracy, sensitivity, and specificity.
 
 ## Dataset
-The dataset, available at [Heart Disease Data](https://raw.githubusercontent.com/jholland5/COMP4299/main/heartData.csv), includes patient data and whether or not they have heart disease.
+The dataset, available at [Heart Disease Data](https://raw.githubusercontent.com/jholland5/COMP4299/blob/main/heartData.csv), includes patient data and whether or not they have heart disease.
 
 ## Results
 The final model achieved:
