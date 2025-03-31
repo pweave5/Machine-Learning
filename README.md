@@ -14,3 +14,4 @@ The projects in this repository utilize a range of machine learning models, incl
 - [Multiple Linear Regression](https://github.com/pweave5/Machine-Learning/tree/main/Concrete-Compressive-Strength-MLR)
 - [Logistic Regression](https://github.com/pweave5/Machine-Learning/tree/main/Heart-Disease-Logistic-Regression)
 - [Decision Trees](https://github.com/pweave5/Machine-Learning/tree/main/Spam-Detection-Decision-Tree)
+- [Random Forest]()
