@@ -1,0 +1,284 @@
+---
+title: "Spam Detection Random Forest"
+author: "Preston Weaver"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include = FALSE}
+
+# Package Installation
+packages <- c("tidyverse", "caret", "knitr", "kableExtra", "rpart", "rpart.plot", "gridExtra")
+
+# Install and load any missing packages
+install_and_load <- function(pkg) {
+  if (!require(pkg, character.only = TRUE)) {
+    install.packages(pkg, repos = "http://cran.us.r-project.org")
+    library(pkg, character.only = TRUE)
+  }
+}
+
+# Apply the function to each package
+sapply(packages, install_and_load)
+
+#load in dataset
+url <- "https://raw.githubusercontent.com/jholland5/COMP4299/main/spamData.csv"
+
+
+spam_data <- url |>  read_csv()
+
+```
+
+
+
+## Introduction 
+
+The Spam E-Mail Dataset is designed to classify emails as either spam (1) or not spam (0) based on various textual and structural attributes. It consists of 57 attributes that capture different characteristics of an email, including:
+
+- Word Frequency (48 attributes): Measures the percentage of words in the email that match specific keywords.
+
+- Character Frequency (6 attributes): Represents the percentage of specific characters (e.g., ‘$’, ‘!’, ‘#’) in the email.
+
+- Capital Letter Features (3 attributes): Includes the average length, longest sequence, and total number of uninterrupted capital letter sequences, which can indicate emphasis or promotional content in spam emails.
+
+
+## Data Preparation
+
+Before we start the modeling process, we must first split the data into training and testing sets. Because our original data frame has sufficient entries, an 80/20 split will be used. This split is common in machine learning to ensure the model has enough data for training while also leaving a representative portion for testing.
+
+
+```{r, echo = FALSE}
+spam_data$spamORnot <- as.factor(spam_data$spamORnot)
+
+# Remove index variable
+spam_data <- spam_data |>
+  select(-1)
+
+# Create train and test sets
+set.seed(2022)
+
+split_index <- createDataPartition(spam_data$spamORnot, times = 1, p = 0.8, list = FALSE)
+
+train <- spam_data[split_index,]
+test <- spam_data[-split_index,]
+
+```
+
+
+Now, let's examine two predictors that may be important in the model: the frequency of the word 'you' and the total number of capital letters. The table below compares the mean values of these variables for spam and valid emails.
+
+```{r, echo = FALSE}
+train |>
+  group_by(spamORnot) |>
+  summarize(
+    `Frequency of You` = round(mean(freq_you), 3),
+    `Total Capital Letters` = round(mean(cap_total), 3)
+  ) |>
+  knitr::kable()
+
+```
+
+As we observe, the word 'you' is used at a higher frequency in spam emails and on average there are more capital letters in spam emails than in valid emails.
+
+
+Looking at the distributions, both predictors exhibit a right skew, which may indicate that a small number of emails contain a disproportionately high frequency of 'you' and capital letters. This characteristic could be indicative of spam emails, which often feature high usage of certain words and capitalized phrases.
+
+<div style="text-align: center;">
+
+```{r, echo=FALSE}
+# Create first histogram
+plot1 <- ggplot(spam_data, aes(x = freq_you)) +
+  geom_histogram(binwidth = 1, fill = "royalblue", color = "black", alpha = 0.7) +
+  labs(title = "Histogram of 'Frequency of 'You'", x = "Frequency of 'You'", y = "Count") +
+  theme_bw()
+
+# Create second histogram
+plot2 <- ggplot(spam_data, aes(x = cap_total)) +
+  geom_histogram(binwidth = 150, fill = "royalblue", color = "black", alpha = 0.7) +
+  labs(title = "Histogram of Total Capital Letters", x = "Total Number of Capital Letters", y = "Count")  +
+      coord_cartesian(
+        xlim = c(0, 5000)
+        ) +
+  theme_bw()
+
+grid.arrange(plot1, plot2, ncol = 2)
+```
+
+</div>
+
+
+## Clustering
+
+Before developing a random forest model, cluster analysis was conducted using a K-Nearest Neighbors (KNN) model. The KNN model predicted whether the email was spam or not using ten variables selected based on their importance, determined by analyzing the difference in means between spam and non-spam emails.
+
+Below is a graph showing how the model performed across different values of k (the number of neighbors).
+
+<div style="text-align: center;">
+
+```{r, echo = FALSE}
+knn_model <- train(spamORnot ~ freq_you + freq_your + freq_free + exclam +
+                     dollar + freq_remove + cap_avg + cap_longest + cap_total +
+                     freq_hp,
+                   method = 'knn',
+                   data = train,
+                   tuneGrid = data.frame(k = seq(5, 21, 2)))
+
+# Plot model to determine best amount of neighbors
+ggplot(knn_model, highlight = TRUE) +
+  labs(
+  title = "Model Accuracy by Number of Neighbors",
+  x = "Number of Neighbors (k)",
+  y = "Accuracy"
+) +
+  theme_bw() +
+  theme(
+    plot.title = element_text(hjust = 0.5)
+  )
+
+```
+
+</div>
+
+On the graph, the data point with a diamond around it is the optimal number of neighbors. To evaluate the model's performance, we now test it on the test set. Below is a table summarizing key classification metrics.
+
+```{r, echo = FALSE}
+# Test model on test set
+y_hat_knn <- predict(knn_model, test, type = "raw")
+
+f_score <- F_meas(y_hat_knn, test$spamORnot)  # F1 Score
+
+cf <- confusionMatrix(y_hat_knn, test$spamORnot)
+
+knn_results <- tibble(Metric = c('Accuracy', 'Sensitivity', 'Specificity', 'F1 Score'), 
+                      Value = c(cf$overall["Accuracy"], cf$byClass["Sensitivity"],
+                                cf$byClass['Specificity'], f_score))
+  
+
+knn_results |>
+  mutate(
+    Value = round(Value, 3)
+  ) |>
+  knitr::kable()
+```
+
+
+## Random Forest
+
+The K-Nearest Neighbors (KNN) model exhibited limited success, suggesting difficulty in capturing complex patterns within the dataset. As a result, we next evaluate a Random Forest model, which is better suited to modeling non-linear relationships and accounting for greater variance in the data. In creating the model, 10 predictors were used: `freq_you`, `freq_your`, `freq_free`, `freq_remove`, `freq_hp`, `exclam`, `dollar`, `cap_avg`, `cap_longest`, and `cap_total`. Also multiple numbers were tested for the `mtry` parameter to optimize model performance. The graph below shows the accuracy results at various `mtry` values.
+
+<div style="text-align: center;">
+
+```{r, echo = FALSE}
+rand_forest2 <- train(spamORnot ~ freq_you + freq_your + freq_free + exclam +
+                        dollar + freq_remove + cap_avg + cap_longest + cap_total + freq_hp, 
+                      method = "rf", 
+                      data = train,
+                      tuneGrid = data.frame(mtry = seq(2, 5, 1)))
+
+ggplot(rand_forest2) +
+    labs(
+  title = "Model Accuracy by mtry Value",
+  x = "Randomly Selected Predictors",
+  y = "Accuracy"
+) +
+  theme_bw() +
+  theme(
+    plot.title = element_text(hjust = 0.5)
+  )
+
+```
+
+</div>
+
+As observed, the optimal value for the mtry parameter is 2, indicating that at each split in the constructed decision trees, two predictor variables are randomly selected and evaluated to determine the best possible split. Below is a table summarizing the model's performance on the test set. The Random Forest model demonstrates improved accuracy, sensitivity, specificity, and F1 Score compared to previous models, highlighting its effectiveness in capturing the underlying patterns in the data.
+
+
+```{r, echo = FALSE}
+# Predict outcome using the rf model
+y_hat_rf <- predict(rand_forest2, test, type = "raw")
+
+f_score_rf <- F_meas(y_hat_rf, test$spamORnot)   # F score
+
+rf_cf <- confusionMatrix(y_hat_rf, test$spamORnot)
+
+
+# Create Table of the results
+rf_results <- tibble(Metric = c('Accuracy', 'Sensitivity', 'Specificity', 'F1 Score'), 
+                      Value = c(rf_cf$overall["Accuracy"], rf_cf$byClass["Sensitivity"],
+                                rf_cf$byClass['Specificity'], f_score_rf))
+  
+
+rf_results |>
+  mutate(
+    Value = round(Value, 3)
+  ) |>
+  knitr::kable()
+```
+
+
+## Conclusion
+
+The table below summarizes the findings of this report. For the task of spam email detection, the Random Forest model reigned supreme, outpreforming the decision tree built in the former report. Lastly, the K-Nearest Neighbors model struggled to accurately capture the patterns in the dataset and delivered the weakest performance.
+
+```{r, echo = FALSE}
+# Decision Tree Model
+treeModel <- rpart(spamORnot ~ ., 
+                data = train,
+                method = 'class')
+
+dt_predictions <- predict(treeModel, test, type = 'class')
+
+dt_cf <- confusionMatrix(dt_predictions, test$spamORnot)
+dt_fscore <- F_meas(factor(dt_predictions), test$spamORnot)
+
+```
+
+```{r, echo=FALSE}
+# Create a new table
+final_results <- tibble(Model = character(), 
+                        Accuracy = numeric(), 
+                        Sensitivity = numeric(), 
+                        Specificity = numeric(), 
+                        `F1 Score` = numeric())
+
+# Add each row using tibble()
+dt_row <- tibble(Model = "Decision Tree", 
+                 Accuracy = dt_cf$overall["Accuracy"], 
+                 Sensitivity = dt_cf$byClass["Sensitivity"], 
+                 Specificity = dt_cf$byClass["Specificity"], 
+                 `F1 Score` = dt_fscore)
+
+knn_row <- tibble(Model = "KNN Model", 
+                  Accuracy = cf$overall["Accuracy"], 
+                  Sensitivity = cf$byClass["Sensitivity"], 
+                  Specificity = cf$byClass["Specificity"], 
+                  `F1 Score` = f_score)
+
+rf_row <- tibble(Model = "Random Forest", 
+                 Accuracy = rf_cf$overall["Accuracy"], 
+                 Sensitivity = rf_cf$byClass["Sensitivity"], 
+                 Specificity = rf_cf$byClass["Specificity"], 
+                 `F1 Score` = f_score_rf)
+
+
+# Combine all
+final_results <- bind_rows(final_results, dt_row, knn_row, rf_row)
+
+# Round and display
+final_results |>
+  mutate(
+    Accuracy = round(Accuracy, 3),
+    Sensitivity = round(Sensitivity, 3),
+    Specificity = round(Specificity, 3),
+    `F1 Score` = round(`F1 Score`, 3)
+  ) |>
+  knitr::kable()
+```
+
+To ensure the seed used didn't play a role in the success of the model, three different random seeds were also tested. When the models were generated with the new seeds, results remained consistent. 
+
+In conclusion, the Random Forest model effectively predicted whether an email was spam or not, outperforming both the Decision Tree and K-Nearest Neighbors (KNN) models. It achieved high overall accuracy and a strong F1 score, indicating reliable performance across both spam and non-spam classifications. 
