@@ -1,0 +1,284 @@
+---
+title: "Beans Principal Component Analysis"
+author: "Preston Weaver"
+date: "2025-04-16"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include = FALSE}
+
+# Package Installation
+packages <- c("tidyverse", "caret", "knitr", "kableExtra", "DT", "RColorBrewer")
+
+# Install and load any missing packages
+install_and_load <- function(pkg) {
+  if (!require(pkg, character.only = TRUE)) {
+    install.packages(pkg, repos = "http://cran.us.r-project.org")
+    library(pkg, character.only = TRUE)
+  }
+}
+
+# Apply the function to each package
+sapply(packages, install_and_load)
+
+#load in dataset
+url <- "https://raw.githubusercontent.com/jholland5/COMP4299/main/beans.csv"
+
+
+beans <- url |>  read_csv()
+
+```
+
+
+## Introduction
+
+The Beans dataset consists of physical measurements extracted from images of seven different varieties of dried beans. Each observation includes 16 numerical features covering properties of the beans such as shape, area, perimeter, ect., along with a label indicating the bean variety. The primary goal of this dataset is to accurately classify the bean type based on the numeric data.
+
+This report explores how well we can classify these beans using only numeric data. To simplify the high-dimensional dataset, we apply Principal Component Analysis (PCA), reducing the number of features while preserving most of the original information. Then, we use two machine learning to evaluate classification performance and compare their accuracy across bean types.
+
+Below is a visualization of bean type occurance in the dataset. As we observe, dermason beans are the most prevalent throughout the dataset, while bombay beans are the least frequently occuring.
+
+<div align = 'center'>
+
+```{r, echo = FALSE}
+# Count of Each Bean Type
+beans |>
+  ggplot(aes(Class, fill = Class)) +
+    geom_bar() +
+    labs(
+      title = "Count of Each Bean Type",
+      x = "Bean Type",
+      y = "Count"
+    ) + 
+    scale_fill_brewer(palette = 'Set2') +
+    theme_bw() +
+    theme(
+      legend.position = 'none'
+    )
+
+
+```
+
+</div>
+
+
+## Principal Component Analysis
+
+This report utilizes Principal Component Analysis (PCA) as a dimensionality reduction technique. PCA helps simplify complex datasets by transforming the original variables into a smaller set of uncorrelated components that still retain most of the important information. Below is a table showing how the 16 original predictors were reduced to three principal components. As observed, the first three principal components capture approximately 90% of the total variance in the original dataset. These principal components will be used in the modeling section.
+
+
+```{r, echo = FALSE}
+
+# Remove the target variable and transform data frame to matrix
+beans_matrix <- beans |>
+  select(-Class) |>
+  as.matrix()
+
+# Preform PCA with scaled and centered data
+pc_beans <- prcomp(beans_matrix, center = TRUE, scale. = TRUE)
+
+
+# Calculate Perent of Variance Each PC explains
+prop_var <- pc_beans$sdev^2 / sum(pc_beans$sdev^2)
+cum_var <- cumsum(prop_var)
+
+pca_summary <- tibble(
+  PC = paste0("PC", 1:length(prop_var)),
+  `Standard Deviation` = round(pc_beans$sdev, 3),
+  `Proportion Variance` = round(prop_var, 3),
+  `Cumulative Variance` = round(cum_var, 3)
+)
+
+
+# Looking at only the first 5 PC
+pca_summary <- pca_summary |>
+  filter(
+    PC == 'PC1' | PC == 'PC2' | PC == 'PC3'
+  )
+
+knitr::kable(pca_summary)
+
+
+# Add first 5 PC to the beans data set
+beans <- beans |>
+  mutate(
+    PC1 = pc_beans$x[,1],
+    PC2 = pc_beans$x[,2],
+    PC3 = pc_beans$x[,3]
+    )
+```
+
+Below is a visualization of bean classification using the first two principal components. As we observe, distinct groupings begin to emerge, with Bombay beans forming a well-separated cluster from the other types. Horoz and Dermason also form relatively compact groups. While the remaining classes show some overlap, they still demonstrate noticeable clustering. PCA has effectively reduced the dataset’s dimensionality while preserving enough variance to reveal meaningful class separability.
+
+<div align = 'center'>
+
+```{r, echo = FALSE}
+# Visualizations of the first two predictors
+beans |>
+  ggplot(aes(PC1, PC2, color = Class))+
+    geom_point() +
+    labs(
+      title = "Bean Classification Visualized by Principal Components"
+    ) +
+    scale_color_brewer(palette = 'Set2') +
+    theme_bw()
+
+```
+
+</div>
+
+## Predictive Modeling
+
+This section explores predictive modeling using two algorithms: K Nearest Neighbors (KNN) and Random Forest, based on the first three principal components derived from PCA. To evaluate model performance reliably, the data was first split into an 80/20 training-test partition, and 10-fold cross-validation was applied during training to minimize the risk of overfitting.
+
+### K Nearest Neighbor (KNN)
+
+A common model type used in conjunction with PCA is K Nearest Neighbors (KNN). A KNN model predicting `Class` by the first three principal components was created. Several different values were tested for k. The plot below displays model accuracy across different values of k. We observe that the optimal value of k is approximately 37, beyond which the model accuracy becomes more variable. 
+
+```{r, echo = FALSE}
+# Split Data
+set.seed(2016)
+
+split_index <- createDataPartition(beans$Class, times = 1, p = 0.8,
+                                   list = FALSE)
+
+train <- beans[split_index,]
+test <- beans[-split_index,]
+
+ctrl <- trainControl(method = "cv", number = 10)
+```
+
+<div align = 'center'>
+
+```{r, echo=FALSE}
+# KNN Model
+knn_model <- train(Class ~ PC1 + PC2 + PC3,
+                    method = 'knn',
+                    data = train,
+                    trControl = ctrl,
+                    tuneGrid = data.frame(k = seq(5, 69, 2))
+                    )
+
+ggplot(knn_model) +
+  labs(
+    title = "Model Accuracy vs Number of Neighbors",
+    x = "Number of Neighbors (k)",
+    y= "Accuracy"
+  ) + 
+  theme_bw()
+```
+
+</div>
+
+The tuned model was then tested on the test set to judge how well the model performs on unseen data. The model produced an overall accuracy of 0.883 on the test set. Below is a confusion matrix showing how the model preformed.
+
+
+```{r, echo = FALSE}
+# Create Tuned model
+knn_model_tune <- train(Class ~ PC1 + PC2 + PC3,
+                        method = 'knn',
+                        data = train,
+                        tuneGrid = data.frame(k = 37)
+)
+
+# Make predictions
+knn_preds <- predict(knn_model_tune, test)  
+
+knn_cf <- confusionMatrix(knn_preds, factor(test$Class))
+
+knitr::kable(knn_cf$table)
+```
+
+Below is a table summarizing how the model preformed on each bean type. As we observe, the model struggles with identifying Barbunya beans, only achieving a sensitivity rate of 0.610. On the other hand, the model does extremely well at Bombay, Horoz, and Seker beans achieving balanced accuracies of 1.00, 0.969, and 0.966 respectively.
+
+```{r, echo =FALSE}
+
+# Extract class names (row names of byClass)
+bean_types <- c('BARBUNYA', 'BOMBAY', 'CALI', 'DERMASON', 'HOROZ',
+                'SEKER', 'SIRA')
+
+# Create a tibble of metrics
+bean_metrics <- tibble(
+  Bean = bean_types,
+  Sensitivity = round(knn_cf$byClass[, "Sensitivity"], 3),
+  Specificity = round(knn_cf$byClass[, "Specificity"], 3),
+  `Balanced Accuracy` = round(knn_cf$byClass[, "Balanced Accuracy"], 3)
+)
+
+knitr::kable(bean_metrics)
+```
+
+
+### Random Forest
+
+A Random Forest model type was tested next to see if any improvement was observed. Using the three principal components as the predictors, the model was created. The mtry parameter was tuned, and the optimal value was found to be 1. 
+
+<div align = 'center'>
+
+```{r, echo = FALSE}
+# Random Forest Model
+rf_model <- train(Class ~ PC1 + PC2 + PC3, 
+                  method = 'rf',
+                  data = train,
+                  trControl = ctrl,
+                  tuneGrid = data.frame(mtry = c(1,2)))
+
+# mtry = 1 is ideal
+ggplot(rf_model) +
+  labs(
+    title = "Model Accuracy vs Mtry Value",
+    x = "Mtry Value",
+    y = "Accuracy"
+  ) +
+  theme_bw()
+
+rf_preds <- predict(rf_model, test)
+
+rf_cm <- confusionMatrix(rf_preds, factor(test$Class)) 
+```
+
+</div>
+
+The tuned model was then tested on the test set to judge how well the model performs on unseen data. The model produced an overall accuracy of 0.880 on the test set, which was slightly lower than the KNN model. Below is a confusion matrix showing how the model preformed.
+
+```{r, echo=FALSE}
+# Show confusion matrix
+knitr::kable(rf_cm$table)
+```
+
+Below is a table summarizing how the model preformed on each bean type. As we observe, like the KNN model, the random forest model struggles with identifying Barbunya beans, only achieving a sensitivity rate of 0.614. On the other hand, the model does extremely well at identifying Bombay, Horoz, and Seker beans achieving balanced accuracies of 1.00, 0.966, and 0.969 respectively.
+
+```{r, echo =FALSE}
+
+# Extract class names (row names of byClass)
+bean_types <- c('BARBUNYA', 'BOMBAY', 'CALI', 'DERMASON', 'HOROZ',
+                'SEKER', 'SIRA')
+
+# Create a tibble of metrics
+bean_metrics <- tibble(
+  Bean = bean_types,
+  Sensitivity = round(rf_cm$byClass[, "Sensitivity"], 3),
+  Specificity = round(rf_cm$byClass[, "Specificity"], 3),
+  `Balanced Accuracy` = round(rf_cm$byClass[, "Balanced Accuracy"], 3)
+)
+
+knitr::kable(bean_metrics)
+```
+
+
+## Conclusion
+
+This analysis demonstrated the use of Principal Component Analysis (PCA) with two classification models: K Nearest Neighbors (KNN) and Random Forest. PCA proved to be an effective dimensionality reduction technique, reducing the dataset from 16 predictors to three principal components that preserved approximately 90% of the original variance. Visualizations showed clear class separation for certain bean types.
+
+Both the KNN and Random Forest models performed well, achieving overall test accuracies of 0.883 and 0.880, respectively. The KNN model slightly outperformed Random Forest in overall accuracy, though both models exhibited similar strengths and weaknesses across individual bean types.
+
+- **High Performance**: Both models were highly accurate in identifying Bombay, Horoz, and Seker beans, with balanced accuracies close to or at 1.00.
+
+- **Challenging Cases**: Barbunya beans were consistently difficult for both models to classify, with sensitivity around 0.61.
+
+While overall model performance was similar for both models, their differences in specific class predictions suggest that combining their strengths could potentially offer further improvement.
+
