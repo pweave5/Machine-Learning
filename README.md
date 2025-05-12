@@ -15,5 +15,5 @@ The projects in this repository utilize a range of machine learning models, incl
 - [Logistic Regression](https://github.com/pweave5/Machine-Learning/tree/main/Heart-Disease-Logistic-Regression)
 - [Decision Trees](https://github.com/pweave5/Machine-Learning/tree/main/Spam-Detection-Decision-Tree)
 - [Random Forest](https://github.com/pweave5/Machine-Learning/tree/main/Spam-Detection-Random-Forest)
-- [PCA](https://github.com/pweave5/Machine-Learning/tree/main/Beans-PCA)
-- [K Nearest Neighbors](https://github.com/pweave5/Machine-Learning/tree/main/Beans-PCA)
+- [PCA and K Nearest Neighbors](https://github.com/pweave5/Machine-Learning/tree/main/Beans-PCA)
+- [K Means Clustering]()
