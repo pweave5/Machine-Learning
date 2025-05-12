@@ -1,0 +1,292 @@
+---
+title: "K Means Clustering with Gapminder"
+author: "Preston Weaver"
+date: "2025-04-22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include = FALSE}
+
+# Package Installation
+packages <- c("tidyverse", "dslabs", "knitr", "RColorBrewer", "scales",
+              "gridExtra")
+
+# Install and load any missing packages
+install_and_load <- function(pkg) {
+  if (!require(pkg, character.only = TRUE)) {
+    install.packages(pkg, repos = "http://cran.us.r-project.org")
+    library(pkg, character.only = TRUE)
+  }
+}
+
+# Apply the function to each package
+sapply(packages, install_and_load)
+
+#load in dataset
+gm <- gapminder
+```
+
+## Introduction
+
+The Gapminder dataset is a widely used resource that tracks global development indicators across countries around the world. It is commonly used to explore trends in health and wealth.
+
+The information contained in this dataset includes variables such as: 
+
+- GDP
+- Population
+- Continent
+- Life Expectancy
+- Infant Mortality Rate
+
+This report specifically focuses on the last two: Life Expectancy and Infant Mortality Rate. 
+
+- **Life expectancy** refers to the average number of years a person is expected to live in a given country.
+- **Infant mortality rate** measures how frequently children die within their first year of life, expressed as the number of deaths per 1,000 live births.
+
+Below are the distributions of both predictors. We observe a right-skewed distribution for infant mortality and a left-skewed distribution for life expectancy.
+
+<div align = 'center'>
+
+```{r,echo = FALSE, warning=FALSE}
+
+# Histogram of Infant Mortality
+plot1 <- gm |> 
+  ggplot(aes(infant_mortality)) +
+    geom_histogram(bins = 35, fill = "royalblue", color = 'black') +
+    labs(
+      title = "Infant Mortality Distribution",
+      y = "Count",
+      x = "Infant Mortality (Deaths / 1000 Live Births)"
+    ) +
+    theme_bw()
+
+
+# Histogram of Life Expectancy
+plot2 <- gm |> 
+  ggplot(aes(life_expectancy)) +
+    geom_histogram(bins = 35, fill = "royalblue", color = 'black') +
+    labs(
+    title = "Life Expectancy Distribution",
+    y = "Count",
+    x = "Life Expectancy (years)"
+  ) +
+    theme_bw()
+
+
+grid.arrange(plot1, plot2, ncol = 2)
+```
+
+</div>
+
+Below is a scatterplot of the two variables, colored by continent. As we observe, no distinct groupings emerge. The remainder of this report explores how countries can be grouped based on these two variables using the K-means clustering algorithm.
+
+<div align = 'center'>
+
+```{r, echo=FALSE, warning=FALSE}
+gm |>
+  ggplot(aes(infant_mortality, life_expectancy, color = continent))+
+    geom_point(size = 1) +
+    labs(
+      title = "Infant Mortality vs Life Expectancy",
+      x = "Infant Mortality",
+      y = "Life Expectancy"
+    ) +
+    scale_color_brewer(palette = 'Set2') +
+    theme_bw()
+
+```
+</div>
+
+## Clustering with 5 Groups
+
+To explore natural groupings within the data, we apply the K-means clustering algorithm using five clusters. This technique partitions countries into groups based on similarities in infant mortality and life expectancy.
+
+Below is a scatterplot of the two variables, now colored by the clusters assigned by the K-means model. Compared to the previous plot colored by continent, these clusters reveal more distinct patterns in the data, grouping countries with similar health outcomes.
+
+<div align = 'center'>
+
+```{r, echo = FALSE}
+set.seed(2016)
+
+# Keep only variables of interest
+
+gm_km <- gm |>
+  filter(!is.na(infant_mortality) & !is.na(life_expectancy))
+
+
+km5 <- kmeans(gm_km[,c("infant_mortality", "life_expectancy")], centers = 5, nstart = 20)
+
+gm_km$cluster <- factor(km5$cluster)
+
+
+# Infant Mortality vs Life Expectancy
+gm_km |>
+  ggplot(aes(infant_mortality, life_expectancy, color = cluster))+
+  geom_point() +
+  labs(
+    title = "Infant Mortality vs Life Expectancy",
+    x = "Infant Mortality",
+    y = "Life Expectancy"
+  ) +
+  scale_color_brewer(palette = "Set2") +
+  theme_bw()
+
+
+```
+
+</div>
+
+
+## The Elbow Method
+
+In the previous section, we chose k = 5 to visually compare K-means clusters to the five continents. However, this number may not represent the optimal number of clusters based on the data alone.
+
+To determine an optimal value for k, we use the Elbow Method. This approach evaluates how the total within-cluster sum of squares (WSS) decreases as the number of clusters increases. The goal is to find the point where adding more clusters yields diminishing returns, or the "elbow point."
+
+We test values of k from 1 to 10 and plot the corresponding WSS. As shown in the line chart below, the WSS decreases sharply at first but begins to level off around k = 3, suggesting this may be the optimal number of clusters.
+
+<div align = 'center'>
+
+```{r, echo=FALSE, warning=FALSE}
+n_clusters <- 10      # Consider 10 clusters
+wss <- numeric(10)        # Initialize vector
+
+data <- gm_km[, c("infant_mortality", "life_expectancy")]
+
+set.seed(2003)
+
+for (i in 1:n_clusters) {
+  km.out <- kmeans(data, 
+                    centers = i, 
+                    nstart = 20) # output for 1 to 10 clusters
+  wss[i] <- km.out$tot.withinss # value of within sum sq.
+}
+
+
+wss_df <- tibble(Cluster = seq(1,10,1),
+                 WSS = wss)
+
+# Levels off after 3 clusters
+wss_df |>
+  ggplot(aes(Cluster, WSS)) +
+    geom_line() + 
+    geom_point() +
+    labs(
+      title = "Elbow Plot for K Means Clustering",
+      x = "Number of Clusters",
+      y = "Within Clusters Sum of Squares"
+    ) +  
+    scale_x_continuous(breaks = c(2, 4, 6, 8, 10)) +
+    scale_y_continuous(labels = label_scientific()) +
+    theme_bw()
+
+
+```
+
+</div>
+
+Based on the Elbow Method, we proceed with k = 3 clusters. Below is a scatterplot of infant mortality vs. life expectancy, this time colored by the three K-means clusters.
+
+<div align = 'center'>
+
+```{r, echo = FALSE}
+km3 <- kmeans(gm_km[,c("infant_mortality", "life_expectancy")], 
+                centers = 3, 
+                nstart = 20)
+
+gm_km$cluster <- factor(km3$cluster)
+
+gm_km <- gm_km |>
+  mutate(
+    cluster = ifelse(cluster == 1 | cluster == 2, 
+                        ifelse(cluster == 1, 2, 1),
+                        cluster)
+  )
+
+gm_km$cluster <- as.factor(gm_km$cluster)
+
+# Scatterplot 
+gm_km |>
+  ggplot(aes(infant_mortality, life_expectancy, color = cluster))+
+  geom_point() +
+  labs(
+    title = "Infant Mortality vs Life Expectancy",
+    x = "Infant Mortality",
+    y = "Life Expectancy"
+  ) +
+  scale_color_brewer(palette = "Set2") +
+  theme_bw()
+
+```
+
+</div>
+
+Three distinct groups emerge. Cluster 1 is characterized by high life expectancy and low infant mortality rate. Cluster 2, middling life expectancy and infant mortality rate. Cluster 3, low life expectancy and high infant mortality rate. Below is a table summarizing the groups.
+
+<br> 
+
+```{r, echo = FALSE}
+gm_km |>
+  mutate(
+    Cluster = cluster
+  ) |>
+  group_by(Cluster) |>
+  summarize(
+    `Infant Mortality` = round(mean(infant_mortality), 1),
+    `Life Expectancy` = round(mean(life_expectancy), 1)
+  ) |>
+  knitr::kable()
+
+```
+
+
+## Conclusion
+
+This report demonstrated the application of K-Means clustering, an unsupervised machine learning technique, on two key global health indicators: infant mortality and life expectancy. Using the Elbow Method, we determined that the optimal number of clusters was three.
+
+The resulting clusters revealed distinct groupings:
+
+- Cluster 1 includes countries with low infant mortality and high life expectancy, generally reflecting high-income, well-developed nations.
+
+- Cluster 2 contains countries with moderate levels of both indicators.
+
+- Cluster 3 represents countries with high infant mortality and lower life expectancy.
+
+Further insights emerge when we incorporate GDP into the analysis. On average, countries in Cluster 1 also have significantly higher GDPs, suggesting a strong relationship between a nation's wealth and its health outcomes.
+
+```{r, echo=FALSE}
+gm_km |>
+  group_by(cluster) |>
+  summarize(
+    `Infant Mortality` = round(mean(infant_mortality), 1),
+    `Life Expectancy` = round(mean(life_expectancy), 1),
+    GDP = round(mean(gdp, na.rm = TRUE),0)
+  ) |>
+  knitr::kable()
+```
+
+Notably, these clusters are not evenly distributed across continents. For example, 96% of European countries fall into Cluster 1, while only 11% of African countries do. This uneven distribution underscores regional disparities in health and development.
+
+```{r, echo=FALSE}
+gm_km |>
+  mutate(
+    Continent = continent,
+  ) |>
+  group_by(Continent) |>
+  summarise(
+    `Cluster 1` = round(sum(cluster == 1) / n(), 2),
+    `Cluster 2` = round(sum(cluster == 2) / n(), 2),
+    `Cluster 3` = round(sum(cluster == 3) / n(), 2)
+  ) |>
+  arrange(
+    desc(`Cluster 1`)
+  ) |>
+  knitr::kable()
+
+```
+
+These findings highlight the power of clustering to uncover global patterns and inequalities. Insights such as these can be leveraged to improve policy decisions and determine countries or regions that are in the most need of humanitarian aid.
